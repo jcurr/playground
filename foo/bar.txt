@@ -1,1 +1,1 @@
-I changed this file, then pushed it. Then I made changes online.
+I changed this file, then pushed it. Then I made changes online. And pulled them back down (and pushed again)..
