@@ -9,7 +9,8 @@ import sys
 from binascii import a2b_base64
 import subprocess
 from common_util import * 
-
+from OpenSSL import crypto
+from Crypto import Signature
 global msg
 global nonce_b
 global nonce_a
@@ -17,17 +18,29 @@ global chosen_cipher
 global alice_cert
 global cipher
 global master_secret
+global alice_public_cipher
 
 my_cert = open("bob_cert.pem").read()
 
 #my_public_key = extract_public_key('bob_cert.pem')
 #my_private_key = RSA.importKey(open('private_bob.pem').read())
 #print(repr(my_private_key))
+alice_cert_string = open("alice_cert.pem").read()
+alice_cert = crypto.load_certificate(crypto.FILETYPE_PEM, alice_cert_string)
+print(repr(alice_cert))
+alice_pub = alice_cert.get_pubkey()
 
-#my_private_cipher = PKCS1_v1_5.new(my_private_key)
+print(repr(alice_pub))
+print(str(alice_pub))
 
-alice_public_key = extract_public_key("alice_cert.pem")
-alice_public_cipher = PKCS1_v1_5.new(alice_public_key)
+alice_key_string = open("private_alice.pem").read()
+alice_key = crypto.load_privatekey(crypto.FILETYPE_PEM, alice_key_string)
+print(repr(alice_key))
+
+alice_cert.sign(alice_key,"sha1")
+
+#alice_public_key = OpenSSL.crypto.X509.get_pubkey(alice_cert)
+
 #print(alice_public_key)
 
 
@@ -66,7 +79,7 @@ while True:
 		continue
 		
 	if comm_state == 1:
-		#Receive Alice's request: ["I wan't to talk to you", Alice's ciphers, nonce_alice]
+		#Receive Alice's request: ["I wan't to talk to you", Alice's ciphers, certificate_alice]
 		msg = conn.recv(packet_size)
 		print("received packet")
 		msg_arr = pickle.loads(msg)
@@ -79,18 +92,25 @@ while True:
 		#Instantiate the cipher object for Bob
 		#cipher = 
 		
-		#Retreive Alice's nonce
-		nonce_a = msg_arr[2]
-		sentinel = Random.new().read(15+len(nonce_a))
-		decrypted = my_private_cipher.decrypt(nonce_a,sentinel)
-		print(str( int(decrypted.encode('hex'),16)))
+		#Retreive Alice's certificate
+		alices_cert_string = msg_arr[2]
+		alice_cert = open('cert_from_alice.pem', 'w')
+		alice_cert.write(alices_cert_string)
+		alice_cert.close()	
+		alice_public_key = extract_public_key("cert_from_alice.pem")
+		alice_public_cipher = PKCS1_v1_5.new(alice_public_key)
+		
+		
+	#	sentinel = Random.new().read(15+len(nonce_a))
+	#	decrypted = my_private_cipher.decrypt(nonce_a,sentinel)
+	#	print(str( int(decrypted.encode('hex'),16)))
 		comm_state += 1
 		continue
 
 	if comm_state == 2:
 		#Send Bob's certificate to alice, Bob's selected cipher and Bob's nonce
 		encrypted_nonce = alice_public_cipher.encrypt(nonce_b)
-		print(encrypted_nonce)
+	#		print(encrypted_nonce)
 		msg = pickle.dumps([my_cert, "chosen_cipher", encrypted_nonce])
 		conn.send(msg)
 		comm_state += 1
@@ -100,18 +120,22 @@ while True:
 		msg = conn.recv(packet_size)
 		msg_arr = pickle.loads(msg)
 		
-		#master_secret = cipher.decrypt(msg_arr[0])
+		nonce_a_cipher_text = msg_arr[0]
+		sentinel = Random.new().read(15+len(nonce_a_cipher_text))
+		nonce_a = my_private_cipher.decrypt(nonce_a_cipher_text, sentinel)
+		
+		print(str( int(nonce_a.encode('hex'),16)))
 		
 		#keyed_hash =
-		bob_public = extract_public_key(bob_cert)
+	#	bob_public = extract_public_key(bob_cert)
 		#compute keyed hash of use keyd SHA-1, append hash_string
 		
-		conn.send("hello") #s.send(msg)
+	#	conn.send("hello") #s.send(msg)
 		comm_state += 1
 		continue
 	
 	if comm_state == 4:
-		msg = conn.recv(packet_size)
+	#	msg = conn.recv(packet_size)
 	
 		comm_state += 1
 		continue

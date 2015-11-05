@@ -17,9 +17,7 @@ global chosen_cipher
 global bob_cert
 global cipher
 global master_secret
-
-bob_public_key = extract_public_key("bob_cert.pem")
-bob_public_cipher = PKCS1_v1_5.new(bob_public_key)
+global bob_public_cipher
 
 
 my_public_key = extract_public_key('alice_cert.pem')
@@ -49,8 +47,10 @@ while True:
 	if comm_state == 1:
 		req = "I want to talk to you"
 		cipher_options = "ciphers i support"
-		nonce_a = bob_public_cipher.encrypt(nonce_a)
-		msg = pickle.dumps([req, cipher_options, nonce_a])
+		my_cert_string = open("alice_cert.pem").read()
+
+		#nonce_a = bob_public_cipher.encrypt(nonce_a)
+		msg = pickle.dumps([req, cipher_options, my_cert_string])
 		s.send(msg)
 		print("sent message")
 		comm_state += 1
@@ -59,21 +59,29 @@ while True:
 		msg = s.recv(packet_size)
 		msg_arr = pickle.loads(msg)
 		bob_cert = msg_arr[0]
+				
+		bobs_cert_string = msg_arr[2]
+		bob_cert = open('cert_from_bob.pem', 'w')
+		bob_cert.write(bobs_cert_string)
+
+		bob_public_key = extract_public_key("bob_cert.pem")
+		bob_public_cipher = PKCS1_v1_5.new(bob_public_key)
 		chosen_cipher = msg_arr[1]
-		nonce_b = msg_arr[2]
-		print("recieved:\n" + nonce_b)	
-		sentinel = Random.new().read(len(nonce_b))
-		decrypted = my_private_cipher.decrypt(nonce_b,sentinel)
-		print(str( int(decrypted.encode('hex'),16)))
+
+		nonce_b_cipher_text = msg_arr[2]
+		sentinel = Random.new().read(15+len(nonce_b_cipher_text))
+		nonce_b = my_private_cipher.decrypt(nonce_b_cipher_text, sentinel)
+		
+		print(str( int(nonce_b.encode('hex'),16)))
 		comm_state += 1
 
 	if comm_state == 3:
-		#encrypt nonce_s with bob's public key
-		
-		bob_public_key = extract_public_key(bob_cert)
+		encrypted_nonce = bob_public_cipher.encrypt(nonce_a)
+		digest = "digest-------"
+		msg = pickle.dumps([encrypted_nonce, digest])
 		#compute keyed hash of use keyd SHA-1, append hash_string
 		
-		s.send("hello") #s.send(msg)
+		s.send(msg)
 		comm_state += 1
 
 	
