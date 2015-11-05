@@ -1,15 +1,11 @@
 import socket
 from Crypto.Random import random
 from Crypto import Random
-from Crypto.Util.asn1 import DerSequence
-from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5
 from Crypto.Cipher import DES3
 from Crypto.Hash import HMAC, SHA
 import pickle
 import sys
-from binascii import a2b_base64
-import subprocess
 from common_util import * 
 
 global msg_1
@@ -24,6 +20,7 @@ global cipher
 global master_secret
 global bob_public_cipher
 
+no_errors = True
 
 my_public_key = extract_public_key('alice_cert.pem')
 my_private_key = RSA.importKey(open('private_alice.pem').read())
@@ -53,47 +50,47 @@ while True:
 
 		#nonce_a = bob_public_cipher.encrypt(nonce_a)
 		msg_1 = pickle.dumps([req, cipher_options, my_cert_string])
+
 		s.send(msg_1)
-		print("sent message")
+		print_state_data(comm_state, "send: [I wan't to talk to you, [my ciphers], my certificate]")
 		comm_state += 1
 
 	if comm_state == 2:
 		msg_2 = s.recv(packet_size)
 		msg_arr = pickle.loads(msg_2)
-		bob_cert = msg_arr[0]
 				
-		bobs_cert_string = msg_arr[2]
+		bobs_cert_string = msg_arr[0]
 		bob_cert = open('cert_from_bob.pem', 'w')
 		bob_cert.write(bobs_cert_string)
-
-		bob_public_key = extract_public_key("bob_cert.pem")
+		bob_cert.close()
+		bob_public_key = extract_public_key("cert_from_bob.pem")
 		bob_public_cipher = PKCS1_v1_5.new(bob_public_key)
 		chosen_cipher = msg_arr[1]
 
 		nonce_b_cipher_text = msg_arr[2]
 		sentinel = Random.new().read(15+len(nonce_b_cipher_text))
 		nonce_b = my_private_cipher.decrypt(nonce_b_cipher_text, sentinel)
-		
-		print(nonce_b)
+
+		print_state_data(comm_state,"recv:\tmy certificate\n\tchosen cipher\n\tKa+{" + str(nonce_b) + "}")
 		comm_state += 1
 
 	if comm_state == 3:
-		encrypted_nonce = bob_public_cipher.encrypt(str(nonce_a))
-		print(nonce_a)
+		
 		a = nonce_a
 		b = long(nonce_b)
-		#master_secret = str.encode(nonce_a,'hex') ^ str.encode(nonce_b,'hex')
 		master_secret = a ^ b
-		print(str(master_secret))
+		
+		secret = "Master Secret created = " + str(master_secret)
+		
+		encrypted_nonce = bob_public_cipher.encrypt(str(nonce_a))
 		
 		to_digest = str(master_secret) + msg_1 + msg_2 + hash_string
 		digest = HMAC.new(bytes(master_secret), to_digest, SHA.new() )
 		digest = digest.hexdigest()
-		print(digest)
-		msg_3 = pickle.dumps([encrypted_nonce, digest])
-		#compute keyed hash of use keyd SHA-1, append hash_string
 		
+		msg_3 = pickle.dumps([encrypted_nonce, digest])	
 		s.send(msg_3)
+		print_state_data(comm_state, "send:\tK+bob{"+ str(nonce_a) + "}" + "\n\tdigest = " + digest + "\n" + secret)
 		comm_state += 1
 
 	
@@ -105,18 +102,22 @@ while True:
 		to_digest = str(master_secret) + msg_1 + msg_2 + msg_3 + "SERVER"
 		digest = HMAC.new(bytes(master_secret), to_digest, SHA.new() )
 		digest = digest.hexdigest()
-		print(digest)
 
+		result = 'Success - Keyed Hashes matched'
 		if bobs_hash != digest:
-			print 'hashs did not match'
-		else:
-			print 'hashs did match'
+			result = 'Error - Hashes did not match *******************'
+			no_errors = False
 		
+		print_state_data(comm_state, "recv: digest = " + digest + "\n" + result)
 		comm_state += 1
 
 	# data phase
 	if comm_state == 5:
-		
+				
 		comm_state += 1
-		
-	
+		break
+s.close()
+if no_errors:
+	print '\n\nNo Errors detected, have a nice day :)\n'	
+else:
+	print 'Warning - Errors detected'	

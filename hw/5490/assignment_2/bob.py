@@ -1,18 +1,14 @@
 import socket
 from Crypto import Random
 from Crypto.Random import random
-from Crypto.Util.asn1 import DerSequence
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5
 from Crypto.Cipher import DES3
 from Crypto.Hash import HMAC, SHA
 import pickle
 import sys
-from binascii import a2b_base64
-import subprocess
 from common_util import * 
-from OpenSSL import crypto
-from Crypto import Signature
+
 global msg_1
 global msg_2
 global msg_3
@@ -25,31 +21,12 @@ global cipher
 global master_secret
 global alice_public_cipher
 
-my_cert = open("bob_cert.pem").read()
-
-#my_public_key = extract_public_key('bob_cert.pem')
-#my_private_key = RSA.importKey(open('private_bob.pem').read())
-#print(repr(my_private_key))
-alice_cert_string = open("alice_cert.pem").read()
-alice_cert = crypto.load_certificate(crypto.FILETYPE_PEM, alice_cert_string)
-print(repr(alice_cert))
-alice_pub = alice_cert.get_pubkey()
-
-print(repr(alice_pub))
-print(str(alice_pub))
-
-alice_key_string = open("private_alice.pem").read()
-alice_key = crypto.load_privatekey(crypto.FILETYPE_PEM, alice_key_string)
-print(repr(alice_key))
-
-alice_cert.sign(alice_key,"sha1")
+no_errors = True
 
 my_public_key = extract_public_key('bob_cert.pem')
 my_private_key = RSA.importKey(open('private_bob.pem').read())
 my_private_cipher = PKCS1_v1_5.new(my_private_key)
 my_public_cipher = PKCS1_v1_5.new(my_public_key)
-
-
 
 hash_string = "SERVER"
 
@@ -72,23 +49,21 @@ while True:
 	if comm_state == 0:
 		#Accept a connection from Alice
 		conn, addr = s.accept()
-		print("connected to alice")
+		print_state_data(comm_state, "Accepted Connection")
 		comm_state += 1
 		continue
 		
 	if comm_state == 1:
 		#Receive Alice's request: ["I wan't to talk to you", Alice's ciphers, certificate_alice]
 		msg_1 = conn.recv(packet_size)
-		print("received packet")
 		msg_arr = pickle.loads(msg_1)
+
 		#Disregarding first item of incoming array "I want to talk to you"
 		
 		#Retreive Alice's cipher suite
 		ciphers_supported_by_alice = msg_arr[1]
 		#Choose a cipher
 		#chosen_cipher =  choose_cipher(ciphers_supported_by_alice)	
-		#Instantiate the cipher object for Bob
-		#cipher = 
 		
 		#Retreive Alice's certificate
 		alices_cert_string = msg_arr[2]
@@ -98,19 +73,20 @@ while True:
 		alice_public_key = extract_public_key("cert_from_alice.pem")
 		alice_public_cipher = PKCS1_v1_5.new(alice_public_key)
 		
-		
-	#	sentinel = Random.new().read(15+len(nonce_a))
-	#	decrypted = my_private_cipher.decrypt(nonce_a,sentinel)
-	#	print(str( int(decrypted.encode('hex'),16)))
+		print_state_data(comm_state, "recv: [I wan't to talk to you, [Alice's ciphers], certificate_alice]")
 		comm_state += 1
 		continue
 
 	if comm_state == 2:
 		#Send Bob's certificate to alice, Bob's selected cipher and Bob's nonce
+		my_cert = open("bob_cert.pem").read()
+		
 		encrypted_nonce = alice_public_cipher.encrypt(str(nonce_b))
-	#		print(encrypted_nonce)
+		
 		msg_2 = pickle.dumps([my_cert, "chosen_cipher", encrypted_nonce])
+		
 		conn.send(msg_2)
+		print_state_data(comm_state,"send:\tmy certificicate\n\tchosen cipher\n\tKa+{" + str(nonce_b) + "}")
 		comm_state += 1
 		continue
 
@@ -122,44 +98,48 @@ while True:
 		sentinel = Random.new().read(15+len(nonce_a_cipher_text))
 		nonce_a = my_private_cipher.decrypt(nonce_a_cipher_text, sentinel)
 		
-		print(nonce_a)
 		
 		a = long(nonce_a)
 		b = nonce_b
 		master_secret = a ^ b
-		print(str(master_secret))
+
+		secret = "Master Secret created = " + str(master_secret)
 		
 		to_digest = str(master_secret) + msg_1 + msg_2 +"CLIENT" 
 		digest = HMAC.new(bytes(master_secret), to_digest, SHA.new() )
 		digest = digest.hexdigest()
-		print(digest)
 		
 		alices_hash = msg_arr[1]
 		
+		result = 'Success - Keyed Hashes matched'
 		if alices_hash != digest:
-			print 'hashs did not match'
-		else:
-			print 'hashs did match'
+			result = 'Error - Hashes did not match *******************'
+			no_errors = False
 		
+		print_state_data(comm_state, "recv:\tnonce_alice = " + str(nonce_a) + "\n\tdigest = " + digest + "\n" + secret + "\n" + result)
 		comm_state += 1
 		continue
 	
 	if comm_state == 4:
-	#	msg = conn.recv(packet_size)
 	
 		to_digest = str(master_secret) + msg_1 + msg_2 + msg_3 + hash_string
 		digest = HMAC.new(bytes(master_secret), to_digest, SHA.new() )
 		digest = digest.hexdigest()
-		print(digest)
 		
 		msg_4 = pickle.dumps([digest])
 		conn.send(msg_4)
+		print_state_data(comm_state, "send: digest = " + digest)
 		comm_state += 1
 		continue
 
 	# data phase
 	if comm_state == 5:
 		
-		comm_state += 1
-		continue
-	
+		break
+	#	comm_state += 1
+#		continue
+s.close()
+if no_errors:
+	print '\n\nNo Errors Detected, Have a Nice Day :)\n'
+else:
+	print 'Warning - Errors detected'	
